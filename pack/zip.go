@@ -44,7 +44,9 @@ func ToZip(filename string, basedir string, files ...string) error {
 			return err
 		}
 		_, err = io.Copy(writer, file)
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

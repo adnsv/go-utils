@@ -2,10 +2,13 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/adnsv/go-utils/runner"
+	"github.com/blang/semver/v4"
 )
 
 // Stats contains a set of git statistics
@@ -72,4 +75,43 @@ func ParseDescription(s string) (*Description, error) {
 		AdditionalCommits: n,
 		ShortHash:         parts[3],
 	}, nil
+}
+
+// VersionInfo contains version information in various formats
+type VersionInfo struct {
+	SemanticTag semver.Version // as parsed from tag
+	Semantic    semver.Version // with additional commits, if != 0
+	Triplet     string         // Major.Minor.Patch
+	Quad        string         // dot-separated quad (Major.Minor.Patch.GitAdditionalCommits)
+	NNNN        string         // comma-separated quad, useful for windows RC building
+	Pre         string         // semantic pre-release suffix
+	Build       string         // semantic build suffix
+}
+
+// ParseVersion extracts useful version info from git.Stat description
+func ParseVersion(d Description) (*VersionInfo, error) {
+	ret := &VersionInfo{}
+	v, err := semver.ParseTolerant(d.Tag)
+	if err != nil {
+		return nil, err
+	}
+	ret.SemanticTag = v
+	ret.Semantic = v
+	if d.AdditionalCommits > 0 {
+		// add additional commits (if any) as build suffix
+		ret.Semantic.Build = append([]string{strconv.Itoa(d.AdditionalCommits)}, ret.Semantic.Build...)
+	}
+	ret.Triplet = fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	ret.Quad = fmt.Sprintf("%d.%d.%d.%d", v.Major, v.Minor, v.Patch, d.AdditionalCommits)
+	ret.NNNN = fmt.Sprintf("%d,%d,%d,%d", v.Major, v.Minor, v.Patch, d.AdditionalCommits)
+	if len(v.Pre) > 0 {
+		ret.Pre = v.Pre[0].String()
+		for _, p := range v.Pre[1:] {
+			ret.Pre += "." + p.String()
+		}
+	}
+	if len(v.Build) > 0 {
+		ret.Build = strings.Join(v.Build, ".")
+	}
+	return ret, nil
 }

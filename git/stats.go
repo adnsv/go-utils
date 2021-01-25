@@ -79,13 +79,14 @@ func ParseDescription(s string) (*Description, error) {
 
 // VersionInfo contains version information in various formats
 type VersionInfo struct {
-	SemanticTag semver.Version // as parsed from tag
-	Semantic    semver.Version // with additional commits, if != 0
-	Triplet     string         // Major.Minor.Patch
-	Quad        string         // dot-separated quad (Major.Minor.Patch.GitAdditionalCommits)
-	NNNN        string         // comma-separated quad, useful for windows RC building
-	Pre         string         // semantic pre-release suffix
-	Build       string         // semantic build suffix
+	SemanticTag       semver.Version // as parsed from tag
+	Semantic          semver.Version // with additional commits, if != 0
+	AdditionalCommits int
+	Triplet           string // Major.Minor.Patch
+	Quad              string // dot-separated quad (Major.Minor.Patch.GitAdditionalCommits)
+	NNNN              string // comma-separated quad, useful for windows RC building
+	Pre               string // semantic pre-release suffix
+	Build             string // semantic build suffix
 }
 
 // ParseVersion extracts useful version info from git.Stat description
@@ -95,6 +96,7 @@ func ParseVersion(d Description) (*VersionInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	ret.AdditionalCommits = d.AdditionalCommits
 	ret.SemanticTag = v
 	ret.Semantic = v
 	if d.AdditionalCommits > 0 {

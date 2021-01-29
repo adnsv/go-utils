@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-func ToZip(filename string, basedir string, files ...string) error {
+func ToFlatZip(filename string, files ...string) error {
 
 	out, err := os.Create(filename)
 	if err != nil {
@@ -19,7 +19,7 @@ func ToZip(filename string, basedir string, files ...string) error {
 	defer zipper.Close()
 
 	for _, srcname := range files {
-		file, err := os.Open(filepath.Join(basedir, srcname))
+		file, err := os.Open(srcname)
 		if err != nil {
 			return err
 		}
@@ -36,7 +36,7 @@ func ToZip(filename string, basedir string, files ...string) error {
 			return err
 		}
 
-		header.Name = srcname
+		header.Name = filepath.Base(srcname)
 		header.Method = zip.Deflate
 
 		writer, err := zipper.CreateHeader(header)

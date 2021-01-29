@@ -7,9 +7,10 @@ import (
 )
 
 type Source struct {
-	Name       string
-	Content    []byte
-	Compressed bool
+	Name         string
+	Content      []byte
+	Compressed   bool
+	OriginalSize int
 }
 
 func FromFile(fn string, name string, compress bool) (*Source, error) {
@@ -17,6 +18,7 @@ func FromFile(fn string, name string, compress bool) (*Source, error) {
 	if err != nil {
 		return nil, err
 	}
+	ret := &Source{Name: name, OriginalSize: len(data)}
 	if compress {
 		b := bytes.Buffer{}
 		w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
@@ -29,6 +31,8 @@ func FromFile(fn string, name string, compress bool) (*Source, error) {
 			return nil, err
 		}
 		data = b.Bytes()
+		ret.Compressed = true
 	}
-	return &Source{Name: name, Content: data, Compressed: compress}, nil
+	ret.Content = data
+	return ret, nil
 }

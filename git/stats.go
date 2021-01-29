@@ -28,15 +28,6 @@ func Stat(dir string) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := runner.WDTrimmedOutput(dir, "git", "describe", "--long")
-	if err != nil {
-		return nil, err
-	}
-	d, err := ParseDescription(s)
-	if err != nil {
-		return nil, err
-	}
-	ret.Description = *d
 	ret.Hash, err = runner.WDTrimmedOutput(dir, "git", "rev-parse", "HEAD")
 	if err != nil {
 		return nil, err
@@ -49,6 +40,16 @@ func Stat(dir string) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
+	s, err := runner.WDTrimmedOutput(dir, "git", "describe", "--long")
+	if err != nil {
+		return nil, errors.New("git describe failure, repo has no tags")
+	}
+	d, err := ParseDescription(s)
+	if err != nil {
+		return nil, err
+	}
+	ret.Description = *d
+
 	return ret, nil
 }
 

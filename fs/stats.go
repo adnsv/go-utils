@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // Error Codes
@@ -14,13 +15,13 @@ var (
 	ErrDirNotEmpty = errors.New("directory is not empty")
 )
 
-func FileExists(path string) bool {
-	stat, err := os.Stat(path)
+func FileExists(path ...string) bool {
+	stat, err := os.Stat(filepath.Join(path...))
 	return err == nil && !stat.IsDir()
 }
 
-func CheckFileExists(path string) (bool, error) {
-	stat, err := os.Stat(path)
+func CheckFileExists(path ...string) (bool, error) {
+	stat, err := os.Stat(filepath.Join(path...))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -32,13 +33,13 @@ func CheckFileExists(path string) (bool, error) {
 	return true, nil
 }
 
-func DirExists(path string) bool {
-	stat, err := os.Stat(path)
+func DirExists(path ...string) bool {
+	stat, err := os.Stat(filepath.Join(path...))
 	return err == nil && stat.IsDir()
 }
 
-func CheckDirExists(path string) (bool, error) {
-	stat, err := os.Stat(path)
+func CheckDirExists(path ...string) (bool, error) {
+	stat, err := os.Stat(filepath.Join(path...))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -50,8 +51,8 @@ func CheckDirExists(path string) (bool, error) {
 	return true, nil
 }
 
-func ValidateFileExists(path string) error {
-	exists, err := CheckFileExists(path)
+func ValidateFileExists(path ...string) error {
+	exists, err := CheckFileExists(path...)
 	if err != nil {
 		return err
 	}
@@ -61,8 +62,8 @@ func ValidateFileExists(path string) error {
 	return nil
 }
 
-func ValidateDirExists(path string) error {
-	exists, err := CheckDirExists(path)
+func ValidateDirExists(path ...string) error {
+	exists, err := CheckDirExists(path...)
 	if err != nil {
 		return err
 	}
@@ -72,8 +73,8 @@ func ValidateDirExists(path string) error {
 	return nil
 }
 
-func ValidateEmptyDirExists(name string) error {
-	f, err := os.Open(name)
+func ValidateEmptyDirExists(path ...string) error {
+	f, err := os.Open(filepath.Join(path...))
 	if err != nil {
 		return err
 	}

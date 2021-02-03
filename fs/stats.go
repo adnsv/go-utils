@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
+	"sort"
 )
 
 // Error Codes
@@ -16,9 +16,18 @@ var (
 	ErrDirNotEmpty = errors.New("directory is not empty")
 )
 
+// FileExists returns true if a file exists at the specified location.
+// If the path points to a directory, this function returns false.
 func FileExists(path ...string) bool {
 	stat, err := os.Stat(filepath.Join(path...))
 	return err == nil && !stat.IsDir()
+}
+
+// DirExists returns true if a directory exists at the specified location.
+// If the path points to a file, this function returns false.
+func DirExists(path ...string) bool {
+	stat, err := os.Stat(filepath.Join(path...))
+	return err == nil && stat.IsDir()
 }
 
 func CheckFileExists(path ...string) (bool, error) {
@@ -32,11 +41,6 @@ func CheckFileExists(path ...string) (bool, error) {
 		return false, ErrDirNotFile
 	}
 	return true, nil
-}
-
-func DirExists(path ...string) bool {
-	stat, err := os.Stat(filepath.Join(path...))
-	return err == nil && stat.IsDir()
 }
 
 func CheckDirExists(path ...string) (bool, error) {
@@ -88,32 +92,58 @@ func ValidateEmptyDirExists(path ...string) error {
 	return ErrDirNotEmpty
 }
 
-func SearchSubdirsInDir(dir string, re *regexp.Regexp) []string {
-	ret := []string{}
-	filter := func(fn string, fi os.FileInfo, err error) error {
-		if re.MatchString(fn) == false {
-			return nil
-		}
-		if fi.IsDir() {
-			ret = append(ret, fn)
-		}
-		return nil
+// ResolvesToSameFile returns true if the two paths resolve to the
+// same actual file. Follows symlinks.
+func ResolvesToSameFile(pathA, pathB string) bool {
+	if pathA == pathB {
+		return true
 	}
-	filepath.Walk(dir, filter)
-	return ret
+	sa, err := os.Stat(pathA)
+	if err != nil {
+		return false
+	}
+	if sa.Mode()&os.ModeSymlink == os.ModeSymlink {
+		pathA, err = filepath.EvalSymlinks(pathA)
+		if err != nil {
+			return false
+		}
+		sa, err = os.Stat(pathA)
+		if err != nil {
+			return false
+		}
+	}
+
+	sb, err := os.Stat(pathB)
+	if sb.Mode()&os.ModeSymlink == os.ModeSymlink {
+		pathB, err = filepath.EvalSymlinks(pathB)
+		if err != nil {
+			return false
+		}
+		sb, err = os.Stat(pathB)
+		if err != nil {
+			return false
+		}
+	}
+
+	return os.SameFile(sa, sb)
 }
 
-func SearchFilesInDir(dir string, re *regexp.Regexp) []string {
-	ret := []string{}
-	filter := func(fn string, fi os.FileInfo, err error) error {
-		if re.MatchString(fn) == false {
-			return nil
+// NormalizePathsToSlash normalizes a list of file paths:
+// - removes empty paths
+// - converts separators to slashes
+// - removes duplicates
+// - sorts
+func NormalizePathsToSlash(paths []string) []string {
+	m := make(map[string]struct{}, len(paths))
+	for _, s := range paths {
+		if s == "" {
+			continue
 		}
-		if !fi.IsDir() {
-			ret = append(ret, fn)
-		}
-		return nil
+		m[filepath.ToSlash(s)] = struct{}{}
 	}
-	filepath.Walk(dir, filter)
-	return ret
+	ret := make([]string, 0, len(m))
+	for f := range m {
+		ret = append(ret, f)
+	}
+	return sort.StringSlice(ret)
 }

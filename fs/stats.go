@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // Error Codes
@@ -85,4 +86,34 @@ func ValidateEmptyDirExists(path ...string) error {
 		return nil
 	}
 	return ErrDirNotEmpty
+}
+
+func SearchSubdirsInDir(dir string, re *regexp.Regexp) []string {
+	ret := []string{}
+	filter := func(fn string, fi os.FileInfo, err error) error {
+		if re.MatchString(fn) == false {
+			return nil
+		}
+		if fi.IsDir() {
+			ret = append(ret, fn)
+		}
+		return nil
+	}
+	filepath.Walk(dir, filter)
+	return ret
+}
+
+func SearchFilesInDir(dir string, re *regexp.Regexp) []string {
+	ret := []string{}
+	filter := func(fn string, fi os.FileInfo, err error) error {
+		if re.MatchString(fn) == false {
+			return nil
+		}
+		if !fi.IsDir() {
+			ret = append(ret, fn)
+		}
+		return nil
+	}
+	filepath.Walk(dir, filter)
+	return ret
 }

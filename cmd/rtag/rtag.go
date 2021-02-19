@@ -29,7 +29,9 @@ func main() {
 	app.Action = func() {
 		wd, _ := os.Getwd()
 		stats, err := git.Stat(wd)
-		check(err)
+		if err != nil {
+			log.Fatalf("failed to obtain git stats: %v", err)
+		}
 
 		fmt.Println("repo info:")
 		fmt.Println("- branch:", stats.Branch)

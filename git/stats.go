@@ -18,6 +18,7 @@ type Stats struct {
 	Hash        string      // result of `git rev-parse HEAD` command
 	ShortHash   string      // result of `git rev-parse --short HEAD` command
 	AuthorDate  string      // result of `git log -n1 --date=format:"%Y-%m-%dT%H:%M:%S" --format=%ad`
+	Dirty       bool        // repo returns non-empty `git status --porcelain`
 }
 
 // Stat obtains git stats for a specified local directory
@@ -40,7 +41,12 @@ func Stat(dir string) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := runner.WDTrimmedOutput(dir, "git", "describe", "--long")
+	s, err := runner.WDTrimmedOutput(dir, "git", "status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	ret.Dirty = !(s == "\n" || s == "\r\n")
+	s, err = runner.WDTrimmedOutput(dir, "git", "describe", "--long")
 	if err != nil {
 		return nil, errors.New("git describe failure, repo has no tags")
 	}

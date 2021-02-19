@@ -52,7 +52,7 @@ func Stat(dir string) (*Stats, error) {
 		return nil, fmt.Errorf("while running '%s': %w", `git log -n1 --date=format:%Y-%m-%dT%H:%M:%S --format=%ad`, err)
 	}
 	s, err := runner.WDTrimmedOutput(dir, "git", "status", "--porcelain")
-	if err != nil {
+	if err != nil && err != runner.ErrEmptyOutput {
 		return nil, fmt.Errorf("while running 'git status --porcelain': %w", err)
 	}
 	ret.Dirty = !(s == "\n" || s == "\r\n")

@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -9,19 +10,14 @@ import (
 // CheckFileHasContent returns true if the specified
 // file exists and has content that matches buf.
 func CheckFileHasContent(fn string, buf []byte) bool {
-	if _, err := os.Stat(fn); os.IsNotExist(err) {
+	if stat, err := os.Stat(fn); os.IsNotExist(err) || stat.IsDir() || int(stat.Size()) != len(buf) {
 		return false
 	}
-	oldBytes, err := ioutil.ReadFile(fn)
-	if err != nil || len(oldBytes) != len(buf) {
+	old, err := ioutil.ReadFile(fn)
+	if err != nil || len(old) != len(buf) {
 		return false
 	}
-	for i, b := range oldBytes {
-		if buf[i] != b {
-			return false
-		}
-	}
-	return true
+	return bytes.Compare(old, buf) == 0
 }
 
 // WriteFileIfChanged writes buf into a file.

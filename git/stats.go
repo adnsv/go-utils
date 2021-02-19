@@ -2,6 +2,8 @@ package git
 
 import (
 	"errors"
+	"fmt"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,29 +23,37 @@ type Stats struct {
 	Dirty       bool        // repo returns non-empty `git status --porcelain`
 }
 
+var ErrNotInsideWorktree = errors.New("dir is outside of git worktree")
+
 // Stat obtains git stats for a specified local directory
 func Stat(dir string) (*Stats, error) {
 	ret := &Stats{}
 	var err error
+
+	_, err = exec.Command("git", "rev-parse", "--is-inside-work-tree").Output()
+	if err != nil {
+		return nil, ErrNotInsideWorktree
+	}
+
 	ret.Branch, err = runner.WDTrimmedOutput(dir, "git", "branch", "--show-current")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while running 'git branch --show-current': %w", err)
 	}
 	ret.Hash, err = runner.WDTrimmedOutput(dir, "git", "rev-parse", "HEAD")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while running 'git rev-parse HEAD': %w", err)
 	}
 	ret.ShortHash, err = runner.WDTrimmedOutput(dir, "git", "rev-parse", "--short", "HEAD")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while running 'git rev-parse --short HEAD': %w", err)
 	}
 	ret.AuthorDate, err = runner.WDTrimmedOutput(dir, "git", "log", "-n1", "--date=format:%Y-%m-%dT%H:%M:%S", "--format=%ad")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while running '%s': %w", `git log -n1 --date=format:%Y-%m-%dT%H:%M:%S --format=%ad`, err)
 	}
 	s, err := runner.WDTrimmedOutput(dir, "git", "status", "--porcelain")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while running 'git status --porcelain': %w", err)
 	}
 	ret.Dirty = !(s == "\n" || s == "\r\n")
 	s, err = runner.WDTrimmedOutput(dir, "git", "describe", "--long")
@@ -52,7 +62,7 @@ func Stat(dir string) (*Stats, error) {
 	}
 	d, err := ParseDescription(s)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("while parsing 'git describe' output: %w", err)
 	}
 	ret.Description = *d
 

@@ -55,7 +55,7 @@ func Stat(dir string) (*Stats, error) {
 	if err != nil && err != runner.ErrEmptyOutput {
 		return nil, fmt.Errorf("while running 'git status --porcelain': %w", err)
 	}
-	ret.Dirty = !(s == "\n" || s == "\r\n")
+	ret.Dirty = !(s == "" || s == "\n" || s == "\r\n")
 	s, err = runner.WDTrimmedOutput(dir, "git", "describe", "--long")
 	if err != nil {
 		return nil, errors.New("git describe failure, repo has no tags")

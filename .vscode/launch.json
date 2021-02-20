@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/cmd/rtag/",
-            "cwd": "${workspaceFolder}/cmd/rtag/"
+            "cwd": "C:\\projects\\pxgl-fttf"
         }
     ]
 }

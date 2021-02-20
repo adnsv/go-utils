@@ -24,6 +24,7 @@ type Stats struct {
 }
 
 var ErrNotInsideWorktree = errors.New("dir is outside of git worktree")
+var ErrNoTags = errors.New("repository has no tags (git describe failed)")
 
 // Stat obtains git stats for a specified local directory
 func Stat(dir string) (*Stats, error) {
@@ -58,11 +59,11 @@ func Stat(dir string) (*Stats, error) {
 	ret.Dirty = !(s == "" || s == "\n" || s == "\r\n")
 	s, err = runner.WDTrimmedOutput(dir, "git", "describe", "--long")
 	if err != nil {
-		return nil, errors.New("git describe failure, repo has no tags")
+		return ret, ErrNoTags
 	}
 	d, err := ParseDescription(s)
 	if err != nil {
-		return nil, fmt.Errorf("while parsing 'git describe' output: %w", err)
+		return ret, fmt.Errorf("while parsing 'git describe' output: %w", err)
 	}
 	ret.Description = *d
 

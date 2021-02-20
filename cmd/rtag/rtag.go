@@ -12,6 +12,7 @@ import (
 	"github.com/adnsv/go-utils/version"
 	"github.com/blang/semver/v4"
 	cli "github.com/jawher/mow.cli"
+	"github.com/tcnksm/go-input"
 )
 
 func check(err error) {
@@ -20,24 +21,53 @@ func check(err error) {
 	}
 }
 
-const invalidInput = "invalid input, please try again (type Ctrl+C to exit)"
+const invalidInput = "invalid input, please try again (Ctrl+C to exit)"
+
+var ui = &input.UI{
+	Writer: os.Stdout,
+	Reader: os.Stdin,
+}
 
 func main() {
 
 	app := cli.App("rtag", "rtag is a git tag management utility that helps making consistent release tags")
 
 	app.Action = func() {
+
 		wd, _ := os.Getwd()
 		stats, err := git.Stat(wd)
-		if err != nil {
+
+		if stats != nil {
+			fmt.Println("repo info:")
+			fmt.Println("- branch:      ", stats.Branch)
+			fmt.Println("- author date: ", stats.AuthorDate)
+			fmt.Println("- hash:        ", stats.Hash)
+		}
+
+		if err == git.ErrNoTags {
+			tag := "v0.0.1"
+			comment := "tagging as v0.0.1"
+
+			fmt.Println()
+			fmt.Println("the repo does not yet have any tags assigned")
+			fmt.Println("you can assign the first tag manually, for example:")
+			fmt.Println()
+			fmt.Printf("    git tag -a %s -m \"%s\"\n", tag, comment)
+			fmt.Println()
+			fmt.Println("or this utility can do it for you")
+			fmt.Println()
+			fmt.Printf("ready create first tag '%s' with comment '%s'\n", tag, comment)
+			err := performTagging(tag, comment)
+			check(err)
+			return
+		} else if err != nil {
 			log.Fatalf("failed to obtain git stats: %v", err)
 		}
 
-		fmt.Println("repo info:")
-		fmt.Println("- branch:", stats.Branch)
-		fmt.Println("- author date:", stats.AuthorDate)
-		fmt.Println("- hash:", stats.Hash)
-		fmt.Println("- last tag:", stats.Description.Tag)
+		oldtag := stats.Description.Tag
+
+		fmt.Println("- last tag:    ", oldtag)
+		vprefix := len(oldtag) > 0 && oldtag[0] == 'v'
 
 		if stats.Description.AdditionalCommits > 0 {
 			fmt.Println("! additional commits:", stats.Description.AdditionalCommits)
@@ -48,9 +78,16 @@ func main() {
 		}
 
 		vi, err := git.ParseVersion(stats.Description)
-		check(err)
+		if err != nil {
+			fmt.Println()
+			fmt.Printf("ERROR: last tag '%s' does not conform to semantic version syntax\n", stats.Description.Tag)
+			fmt.Println("this utility expects your repository to be tagged with semantic tags")
+			fmt.Println("see https://semver.org for more information")
+			fmt.Println("exiting now")
+			os.Exit(1)
+		}
 
-		fmt.Println("- semantic version:", vi.Semantic)
+		fmt.Println("- semantic ver:", vi.Semantic)
 		fmt.Println("- version quad:", vi.Quad.String())
 
 		fmt.Println()
@@ -62,26 +99,17 @@ func main() {
 
 		if stats.Description.AdditionalCommits == 0 {
 			fmt.Printf("your repo state is already tagged as '%s'\n", stats.Description.Tag)
-			yn := ""
-			for {
-				fmt.Printf("do you still want to proceed (Y/N)?")
-				fmt.Scanln(&yn)
-				yn = strings.ToLower(yn)
-				if yn == "n" || yn == "no" {
-					fmt.Println("ok, exiting")
-					os.Exit(2)
-				} else if yn == "y" || yn == "yes" {
-					break
-				} else {
-					fmt.Println(invalidInput)
-				}
+			fmt.Print("still want to ")
+			if !askYN("proceed [y/n]? ") {
+				fmt.Println("exiting")
+				os.Exit(2)
 			}
 		}
 
 		actions := collectActions(vi.Semantic)
 		if len(actions) > 0 {
 			fmt.Println()
-			fmt.Println("actions:")
+			fmt.Println("available actions:")
 			for i, a := range actions {
 				if a.showPRchoice {
 					fmt.Printf("%d: %s '%s' ...\n", i+1, a.desc, a.ver.String())
@@ -91,24 +119,15 @@ func main() {
 			}
 
 			choice := 0
-			for {
-				fmt.Printf("make a choice, type 1 ... %d: ", len(actions))
-
-				var s string
-				fmt.Scanln(&s)
-
-				if len(s) == 0 {
-					fmt.Println(invalidInput)
-					continue
-				}
+			fmt.Print("make a choice: ")
+			ask(fmt.Sprintf("type a number [1 ... %d]: ", len(actions)), func(s string) bool {
 				v, err := strconv.Atoi(s)
-				if err != nil || v < 1 || int(v) > len(actions) {
-					fmt.Println(invalidInput)
-					continue
-				}
 				choice = int(v)
-				break
-			}
+				if err == nil && choice >= 1 && choice <= len(actions) {
+					return true
+				}
+				return false
+			})
 
 			action := actions[choice-1]
 			newver := action.ver
@@ -122,88 +141,26 @@ func main() {
 				fmt.Printf("- 'release' for '%s'\n", withoutPR(action.ver).String())
 
 				choice := ""
-				for {
-					fmt.Printf("type 'alpha', 'beta', 'rc', or 'release': ")
-					fmt.Scanln(&choice)
-
-					if choice != "alpha" && choice != "beta" && choice != "rc" && choice != "release" {
-						fmt.Println(invalidInput)
-						continue
+				ask("type 'alpha', 'beta', 'rc', or 'release': ", func(s string) bool {
+					choice = s
+					if choice == "alpha" || choice == "beta" || choice == "rc" || choice == "release" {
+						return true
 					}
-
-					if choice == "release" {
-						newver.Pre = newver.Pre[:0]
-					} else {
-						newver.Pre = makePR(choice, 1)
-					}
-					break
-				}
+					fmt.Println("invalid input, please try again (Ctrl+C to exit)")
+					return false
+				})
 			}
 
-			comment := fmt.Sprintf("tagging as %s", newver.String())
-			fmt.Println()
-			fmt.Printf("ready to update current tag '%s' -> '%s'\n", vi.Semantic.String(), newver.String())
-			fmt.Printf("will comment as: '%s'\n", comment)
-			yn := ""
-			for {
-				fmt.Printf("proceed (Y/N)? ")
-				fmt.Scanln(&yn)
-				yn = strings.ToLower(yn)
-				if yn == "n" || yn == "no" {
-					fmt.Println("ok, exiting without changes")
-					os.Exit(2)
-				} else if yn == "y" || yn == "yes" {
-					break
-				} else {
-					fmt.Println(invalidInput)
-				}
+			tag := newver.String()
+			if vprefix {
+				tag = "v" + tag
 			}
-
+			comment := fmt.Sprintf("tagging as %s", tag)
 			fmt.Println()
-			fmt.Printf("executing: 'git tag -a %s -m \"%s\"\n", newver.String(), comment)
-
-			cmd := exec.Command("git", "tag", "-a", newver.String(), "-m", comment)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err := cmd.Run()
+			fmt.Printf("ready to update tag '%s'->'%s' with comment '%s'\n", oldtag, tag, comment)
+			err := performTagging(newver.String(), comment)
 			if err != nil {
-				os.Exit(1)
-			}
-
-			fmt.Println()
-			fmt.Printf("your local repo is now tagged as '%s'\n", newver.String())
-			fmt.Printf("you can push these changes to the remote now\n")
-			fmt.Printf("or do additional testing, then:\n")
-			fmt.Printf("- execute 'git push --tags' to push\n")
-			fmt.Printf("- execute 'git tag -d %s' to undo\n", newver.String())
-			fmt.Println()
-			fmt.Printf("rolling back changes after the push requires one mode step:\n")
-			fmt.Printf("- execute 'git tag -d %s' to delete the local tag\n", newver.String())
-			fmt.Printf("- execute 'git push --delete origin %s' to delete the remote tag\n", newver.String())
-			fmt.Println()
-
-			for {
-				fmt.Print("push the new tag to the remote repository (Y/N)?")
-				fmt.Scanln(&yn)
-				yn = strings.ToLower(yn)
-				if yn == "n" || yn == "no" {
-					fmt.Println("ok, exiting")
-					os.Exit(0)
-				} else if yn == "y" || yn == "yes" {
-					break
-				} else {
-					fmt.Println(invalidInput)
-				}
-			}
-
-			fmt.Println("executing: 'git push -tags'")
-
-			cmd = exec.Command("git", "push", "--tags")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err = cmd.Run()
-			if err != nil {
-				os.Exit(1)
+				log.Fatal(err)
 			}
 
 			fmt.Printf("mission accomplished")
@@ -211,6 +168,77 @@ func main() {
 	}
 
 	app.Run(os.Args)
+}
+
+func ask(prompt string, validate func(s string) bool) {
+	s := ""
+	for {
+		fmt.Printf(prompt)
+		fmt.Scanln(&s)
+		if validate(s) {
+			break
+		}
+		fmt.Println(invalidInput)
+		fmt.Println()
+	}
+}
+
+func askYN(prompt string) bool {
+	ret := false
+	ask(prompt, func(s string) bool {
+		s = strings.ToLower(s)
+		if s == "y" || s == "yes" {
+			ret = true
+			return true
+		} else if s == "n" || s == "no" {
+			ret = false
+			return true
+		}
+		return false
+	})
+	return ret
+}
+
+func performTagging(tag string, comment string) error {
+
+	if !askYN("proceed [y/n]? ") {
+		fmt.Println("exiting without changes")
+		os.Exit(2)
+	}
+
+	fmt.Println()
+	fmt.Printf("executing: 'git tag -a %s -m \"%s\"\n", tag, comment)
+
+	cmd := exec.Command("git", "tag", "-a", tag, "-m", comment)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		os.Exit(1)
+	}
+
+	fmt.Println()
+	fmt.Printf("your local repo is now tagged as '%s'\n", tag)
+	fmt.Printf("- to push it to remote:  'git push --tags'\n")
+	fmt.Printf("- to undo local changes: 'git tag -d %s'\n", tag)
+	fmt.Println()
+	fmt.Printf("rolling back changes after the push:\n")
+	fmt.Printf("- delete local:  'git tag -d %s'\n", tag)
+	fmt.Printf("- delete remote: 'git push --delete origin %s'\n", tag)
+	fmt.Println()
+	fmt.Println("this utility can push the new tag for you")
+	if !askYN("proceed with push [y/n]? ") {
+		fmt.Println("exiting")
+		os.Exit(2)
+	}
+
+	fmt.Println("executing: 'git push -tags'")
+
+	cmd = exec.Command("git", "push", "--tags")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	return err
 }
 
 type action struct {

@@ -1,6 +1,6 @@
 // +build darwin freebsd openbsd netbsd dragonfly
 
-package ansi
+package main
 
 import (
 	"os"

@@ -1,6 +1,6 @@
 // +build linux aix zos
 
-package ansi
+package main
 
 import (
 	"os"

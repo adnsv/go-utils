@@ -189,7 +189,7 @@ func main() {
 						fmt.Println("invalid input, please try again (Ctrl+C to exit)")
 						return false
 					})
-				if choice != "" {
+				if choice != "release" {
 					newver.Pre = makePR(choice, 1)
 				} else {
 					newver.Pre = newver.Pre[:0]

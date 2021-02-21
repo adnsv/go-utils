@@ -1,6 +1,8 @@
 package git
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -93,6 +95,56 @@ func ParseDescription(s string) (*Description, error) {
 		AdditionalCommits: n,
 		ShortHash:         parts[3],
 	}, nil
+}
+
+func LastSemanticTag(dir string) (string, *VersionInfo, error) {
+	out, err := exec.Command("git", "tag", "--sort=-creatordate").Output()
+	if err != nil {
+		return "", nil, err
+	}
+
+	scn := bufio.NewScanner(bytes.NewReader(out))
+	for scn.Scan() {
+		ln := scn.Text()
+
+		v, err := semver.ParseTolerant(ln)
+		if err != nil {
+			continue
+		}
+
+		out, err := exec.Command("git", "describe", ln, "--long").Output()
+		if err != nil {
+			continue
+		}
+		d, err := ParseDescription(strings.TrimSpace(string(out)))
+		if err != nil {
+			continue
+		}
+		ret := &VersionInfo{
+			SemanticTag:       v,
+			Semantic:          v,
+			AdditionalCommits: d.AdditionalCommits,
+		}
+		if d.AdditionalCommits > 0 {
+			// add additional commits (if any) as build suffix
+			ret.Semantic.Build = append([]string{strconv.Itoa(d.AdditionalCommits)}, ret.Semantic.Build...)
+		}
+		ret.Quad, err = version.MakeQuad(v, d.AdditionalCommits)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(v.Pre) > 0 {
+			ret.Pre = v.Pre[0].String()
+			for _, p := range v.Pre[1:] {
+				ret.Pre += "." + p.String()
+			}
+		}
+		if len(v.Build) > 0 {
+			ret.Build = strings.Join(v.Build, ".")
+		}
+		return ln, ret, nil
+	}
+	return "", nil, errors.New("failed to parse `git describe` result")
 }
 
 // VersionInfo contains version information in various formats

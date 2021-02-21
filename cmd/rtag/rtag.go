@@ -60,7 +60,7 @@ func main() {
 			fmt.Println()
 			fmt.Println("or this utility can do it for you")
 			fmt.Println()
-			fmt.Printf("ready create first tag %s with comment '%s'\n", ppTag(tag), comment)
+			fmt.Printf("ready create first tag %s %s:\n", ppTag(tag), ppDim("(with comment '"+comment+"')"))
 			err := performTagging(tag, comment)
 			check(err)
 			return
@@ -68,7 +68,37 @@ func main() {
 			log.Fatalf("failed to obtain git stats: %v", err)
 		}
 
+		if stats.Dirty {
+			fmt.Println("! modified since last commit (use 'git status' for mode detail)")
+		}
+		if stats.Dirty {
+			fmt.Println("commit your changes before updating the tag")
+			os.Exit(1)
+		}
+
 		oldtag := stats.Description.Tag
+		vi, err := git.ParseVersion(stats.Description)
+		if err != nil {
+			var altOldTag string
+			altOldTag, vi, err = git.LastSemanticTag(wd)
+			if err == nil {
+				fmt.Printf("last tag '%s' does not conform to semantic version syntax\n", oldtag)
+				fmt.Printf("however, there is an older tag '%s' that can be used instead\n", altOldTag)
+				fmt.Println()
+				if !askYN("proceed with '" + altOldTag + "' as base " + ppInp("/", "y", "n") + "? ") {
+					fmt.Println("exiting")
+					os.Exit(2)
+				}
+				oldtag = altOldTag
+			} else {
+				fmt.Println()
+				fmt.Printf("ERROR: last tag '%s' does not conform to semantic version syntax\n", stats.Description.Tag)
+				fmt.Println("this utility expects your repository to be tagged with semantic tags")
+				fmt.Println("see https://semver.org for more information")
+				fmt.Println("exiting now")
+				os.Exit(1)
+			}
+		}
 
 		fmt.Println("- last tag:    ", oldtag)
 		if prefix == "AUTO" {
@@ -83,7 +113,7 @@ func main() {
 			}
 
 			if prefix == "" {
-				fmt.Printf("- auto prefix:  no\n", prefix)
+				fmt.Printf("- auto prefix:  no\n")
 			} else {
 				fmt.Printf("- auto prefix:  with %q\n", prefix)
 			}
@@ -92,21 +122,7 @@ func main() {
 		stats.Description.Tag = strings.TrimPrefix(stats.Description.Tag, prefix)
 
 		if stats.Description.AdditionalCommits > 0 {
-			fmt.Println("! additional commits:", stats.Description.AdditionalCommits)
-		}
-
-		if stats.Dirty {
-			fmt.Println("! modified since last commit (use 'git status' for mode detail)")
-		}
-
-		vi, err := git.ParseVersion(stats.Description)
-		if err != nil {
-			fmt.Println()
-			fmt.Printf("ERROR: last tag '%s' does not conform to semantic version syntax\n", stats.Description.Tag)
-			fmt.Println("this utility expects your repository to be tagged with semantic tags")
-			fmt.Println("see https://semver.org for more information")
-			fmt.Println("exiting now")
-			os.Exit(1)
+			fmt.Println("- additional commits:", stats.Description.AdditionalCommits)
 		}
 
 		fmt.Println("- semantic ver:", vi.Semantic)
@@ -114,15 +130,10 @@ func main() {
 
 		fmt.Println()
 
-		if stats.Dirty {
-			fmt.Println("commit your changes before updating the tag")
-			os.Exit(1)
-		}
-
 		if stats.Description.AdditionalCommits == 0 {
 			fmt.Printf("your repo state is already tagged as %s\n", ppTag(oldtag))
 			fmt.Print("still want to ")
-			if !askYN("proceed [y/n]? ") {
+			if !askYN("proceed " + ppInp("/", "y", "n") + "? ") {
 				fmt.Println("exiting")
 				os.Exit(2)
 			}
@@ -148,7 +159,7 @@ func main() {
 
 			choice := 0
 			fmt.Print("make a choice: ")
-			ask(fmt.Sprintf("type a number [1...%d]: ", len(actions)), func(s string) bool {
+			ask("type a number "+ppInp("...", "1", strconv.Itoa(len(actions)))+": ", func(s string) bool {
 				v, err := strconv.Atoi(s)
 				choice = int(v)
 				if err == nil && choice >= 1 && choice <= len(actions) {
@@ -169,7 +180,7 @@ func main() {
 				fmt.Printf("- 'release' for %s\n", ppTag(prefix+withoutPR(action.ver).String()))
 
 				choice := ""
-				ask(fmt.Sprintf("type [%s/%s/%s/%s]: ", ppInp("alpha"), ppInp("beta"), ppInp("rc"), ppInp("release")),
+				ask(fmt.Sprintf("type %s: ", ppInp("/", "alpha", "beta", "rc", "release")),
 					func(s string) bool {
 						choice = s
 						if choice == "alpha" || choice == "beta" || choice == "rc" || choice == "release" {
@@ -188,7 +199,7 @@ func main() {
 			tag := prefix + newver.String()
 			comment := fmt.Sprintf("tagging as %s", tag)
 			fmt.Println()
-			fmt.Printf("ready to update tag %s->%s: %s\n", ppTag(oldtag), ppTag(tag), ppDim("with comment '"+comment+"'"))
+			fmt.Printf("ready to update tag %s->%s %s:\n", ppTag(oldtag), ppTag(tag), ppDim("(with comment '"+comment+"')"))
 			err := performTagging(tag, comment)
 			if err != nil {
 				log.Fatal(err)
@@ -232,7 +243,7 @@ func askYN(prompt string) bool {
 
 func performTagging(tag string, comment string) error {
 
-	if !askYN("proceed [y/n]? ") {
+	if !askYN("proceed " + ppInp("/", "y", "n") + "? ") {
 		fmt.Println("exiting without changes")
 		os.Exit(2)
 	}
@@ -258,7 +269,7 @@ func performTagging(tag string, comment string) error {
 	fmt.Printf("- delete remote: 'git push --delete origin %s'\n", tag)
 	fmt.Println()
 	fmt.Println("this utility can push the new tag for you")
-	if !askYN("proceed with push [y/n]? ") {
+	if !askYN("proceed with push " + ppInp("/", "y", "n") + "? ") {
 		fmt.Println("exiting")
 		os.Exit(2)
 	}
@@ -358,9 +369,9 @@ func ppDim(s string) string {
 	return s
 }
 
-func ppInp(s string) string {
-	if pretty {
-		return fmt.Sprintf(vtBold+"%s"+vtReset, s)
-	}
-	return s
+func ppInp(sep string, opts ...string) string {
+	//if pretty {
+	//	return vtDim + "[" + vtReset + vtBold + strings.Join(opts, vtReset+vtDim+sep+vtReset+vtBold) + vtReset + vtDim + "]" + vtReset
+	//}
+	return "[" + strings.Join(opts, sep) + "]"
 }

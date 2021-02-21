@@ -21,16 +21,17 @@ func check(err error) {
 	}
 }
 
-const invalidInput = "invalid input, please try again (Ctrl+C to exit)"
-
 var ui = &input.UI{
 	Writer: os.Stdout,
 	Reader: os.Stdin,
 }
 
 func main() {
+	prefix := "AUTO"
 
 	app := cli.App("rtag", "rtag is a git tag management utility that helps making consistent release tags")
+
+	app.StringOptPtr(&prefix, "p prefix", "AUTO", "prefix for new tags")
 
 	app.Action = func() {
 
@@ -45,8 +46,11 @@ func main() {
 		}
 
 		if err == git.ErrNoTags {
-			tag := "v0.0.1"
-			comment := "tagging as v0.0.1"
+			if prefix == "AUTO" {
+				prefix = "v"
+			}
+			tag := prefix + "0.0.1"
+			comment := fmt.Sprintf("tagging as %s", ppTag(tag))
 
 			fmt.Println()
 			fmt.Println("the repo does not yet have any tags assigned")
@@ -56,7 +60,7 @@ func main() {
 			fmt.Println()
 			fmt.Println("or this utility can do it for you")
 			fmt.Println()
-			fmt.Printf("ready create first tag '%s' with comment '%s'\n", tag, comment)
+			fmt.Printf("ready create first tag %s with comment '%s'\n", ppTag(tag), comment)
 			err := performTagging(tag, comment)
 			check(err)
 			return
@@ -67,7 +71,25 @@ func main() {
 		oldtag := stats.Description.Tag
 
 		fmt.Println("- last tag:    ", oldtag)
-		vprefix := len(oldtag) > 0 && oldtag[0] == 'v'
+		if prefix == "AUTO" {
+			prefix = "v"
+			if len(oldtag) > 1 {
+				d := strings.IndexAny(oldtag, "0123456789")
+				if d == 0 {
+					prefix = ""
+				} else if d == 1 && oldtag[0] == 'v' || oldtag[0] == 'V' {
+					prefix = oldtag[:1]
+				}
+			}
+
+			if prefix == "" {
+				fmt.Printf("- auto prefix:  no\n", prefix)
+			} else {
+				fmt.Printf("- auto prefix:  with %q\n", prefix)
+			}
+		}
+
+		stats.Description.Tag = strings.TrimPrefix(stats.Description.Tag, prefix)
 
 		if stats.Description.AdditionalCommits > 0 {
 			fmt.Println("! additional commits:", stats.Description.AdditionalCommits)
@@ -98,7 +120,7 @@ func main() {
 		}
 
 		if stats.Description.AdditionalCommits == 0 {
-			fmt.Printf("your repo state is already tagged as '%s'\n", stats.Description.Tag)
+			fmt.Printf("your repo state is already tagged as %s\n", ppTag(oldtag))
 			fmt.Print("still want to ")
 			if !askYN("proceed [y/n]? ") {
 				fmt.Println("exiting")
@@ -111,16 +133,22 @@ func main() {
 			fmt.Println()
 			fmt.Println("available actions:")
 			for i, a := range actions {
+				desc := a.desc
+				postdesc := ""
+				if i := strings.IndexByte(desc, '|'); i >= 0 {
+					postdesc = " " + ppDim("("+desc[i+1:]+")")
+					desc = desc[:i]
+				}
 				if a.showPRchoice {
-					fmt.Printf("%d: %s '%s' ...\n", i+1, a.desc, a.ver.String())
+					fmt.Printf("%d: %s %s%s ...\n", i+1, desc, ppTag(prefix+a.ver.String()), postdesc)
 				} else {
-					fmt.Printf("%d: %s '%s'\n", i+1, a.desc, a.ver.String())
+					fmt.Printf("%d: %s %s%s\n", i+1, desc, ppTag(prefix+a.ver.String()), postdesc)
 				}
 			}
 
 			choice := 0
 			fmt.Print("make a choice: ")
-			ask(fmt.Sprintf("type a number [1 ... %d]: ", len(actions)), func(s string) bool {
+			ask(fmt.Sprintf("type a number [1...%d]: ", len(actions)), func(s string) bool {
 				v, err := strconv.Atoi(s)
 				choice = int(v)
 				if err == nil && choice >= 1 && choice <= len(actions) {
@@ -135,30 +163,33 @@ func main() {
 			if action.showPRchoice {
 				fmt.Println()
 				fmt.Println("select (pre-)release type")
-				fmt.Printf("- 'alpha'   for '%s'\n", withPR(action.ver, "alpha", 1).String())
-				fmt.Printf("- 'beta'    for '%s'\n", withPR(action.ver, "beta", 1).String())
-				fmt.Printf("- 'rc'      for '%s'\n", withPR(action.ver, "rc", 1).String())
-				fmt.Printf("- 'release' for '%s'\n", withoutPR(action.ver).String())
+				fmt.Printf("- 'alpha'   for %s\n", ppTag(prefix+withPR(action.ver, "alpha", 1).String()))
+				fmt.Printf("- 'beta'    for %s\n", ppTag(prefix+withPR(action.ver, "beta", 1).String()))
+				fmt.Printf("- 'rc'      for %s\n", ppTag(prefix+withPR(action.ver, "rc", 1).String()))
+				fmt.Printf("- 'release' for %s\n", ppTag(prefix+withoutPR(action.ver).String()))
 
 				choice := ""
-				ask("type 'alpha', 'beta', 'rc', or 'release': ", func(s string) bool {
-					choice = s
-					if choice == "alpha" || choice == "beta" || choice == "rc" || choice == "release" {
-						return true
-					}
-					fmt.Println("invalid input, please try again (Ctrl+C to exit)")
-					return false
-				})
+				ask(fmt.Sprintf("type [%s/%s/%s/%s]: ", ppInp("alpha"), ppInp("beta"), ppInp("rc"), ppInp("release")),
+					func(s string) bool {
+						choice = s
+						if choice == "alpha" || choice == "beta" || choice == "rc" || choice == "release" {
+							return true
+						}
+						fmt.Println("invalid input, please try again (Ctrl+C to exit)")
+						return false
+					})
+				if choice != "" {
+					newver.Pre = makePR(choice, 1)
+				} else {
+					newver.Pre = newver.Pre[:0]
+				}
 			}
 
-			tag := newver.String()
-			if vprefix {
-				tag = "v" + tag
-			}
+			tag := prefix + newver.String()
 			comment := fmt.Sprintf("tagging as %s", tag)
 			fmt.Println()
-			fmt.Printf("ready to update tag '%s'->'%s' with comment '%s'\n", oldtag, tag, comment)
-			err := performTagging(newver.String(), comment)
+			fmt.Printf("ready to update tag %s->%s: %s\n", ppTag(oldtag), ppTag(tag), ppDim("with comment '"+comment+"'"))
+			err := performTagging(tag, comment)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -178,7 +209,7 @@ func ask(prompt string, validate func(s string) bool) {
 		if validate(s) {
 			break
 		}
-		fmt.Println(invalidInput)
+		fmt.Println("invalid input, please try again (Ctrl+C to exit)")
 		fmt.Println()
 	}
 }
@@ -218,8 +249,8 @@ func performTagging(tag string, comment string) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("your local repo is now tagged as '%s'\n", tag)
-	fmt.Printf("- to push it to remote:  'git push --tags'\n")
+	fmt.Printf("your local repo is now tagged as %s\n", ppTag(tag))
+	fmt.Printf("- to push it to remote:  'git push origin %s'\n", tag)
 	fmt.Printf("- to undo local changes: 'git tag -d %s'\n", tag)
 	fmt.Println()
 	fmt.Printf("rolling back changes after the push:\n")
@@ -232,9 +263,9 @@ func performTagging(tag string, comment string) error {
 		os.Exit(2)
 	}
 
-	fmt.Println("executing: 'git push -tags'")
+	fmt.Printf("executing: 'git push origin %s'\n", tag)
 
-	cmd = exec.Command("git", "push", "--tags")
+	cmd = exec.Command("git", "push", "origin", tag)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
@@ -270,13 +301,13 @@ func collectActions(v version.Semantic) []action {
 
 	if len(v.Pre) == 0 {
 		if n := v; n.IncrementPatch() == nil {
-			ret = append(ret, action{"increment patch", n, true})
+			ret = append(ret, action{"increment patch|backwards compatible bug fixes", n, true})
 		}
 		if n := v; n.IncrementMinor() == nil {
-			ret = append(ret, action{"increment minor", n, true})
+			ret = append(ret, action{"increment minor|backwards compatible new functionality", n, true})
 		}
 		if n := v; n.IncrementMajor() == nil {
-			ret = append(ret, action{"increment major", n, true})
+			ret = append(ret, action{"increment major|incompatible API changes", n, true})
 		}
 	} else {
 		pr := v.Pre[0].VersionStr
@@ -300,4 +331,36 @@ func collectActions(v version.Semantic) []action {
 	}
 
 	return ret
+}
+
+var pretty = true
+
+const (
+	vtReset     = "\x1b[0m"
+	vtBold      = "\x1b[1m"
+	vtDim       = "\x1b[2m"
+	vtItalic    = "\x1b[3m"
+	vtUnderline = "\x1b[4m"
+)
+
+func ppTag(s string) string {
+	if pretty {
+		return fmt.Sprintf(vtUnderline+"%s"+vtReset, s)
+	} else {
+		return fmt.Sprintf("'%s'", s)
+	}
+}
+
+func ppDim(s string) string {
+	if pretty {
+		return fmt.Sprintf(vtDim+"%s"+vtReset, s)
+	}
+	return s
+}
+
+func ppInp(s string) string {
+	if pretty {
+		return fmt.Sprintf(vtBold+"%s"+vtReset, s)
+	}
+	return s
 }

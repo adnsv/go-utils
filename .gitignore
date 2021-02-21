@@ -1,0 +1,4 @@
+.deploy/
+.tmp/
+.vscode/
+__debug_bin

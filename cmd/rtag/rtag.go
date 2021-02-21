@@ -28,10 +28,14 @@ var ui = &input.UI{
 
 func main() {
 	prefix := "AUTO"
+	allowDirty := false
 
 	app := cli.App("rtag", "rtag is a git tag management utility that helps making consistent release tags")
 
+	app.Spec = "[--prefix=<ver-prefix>] [--allow-dirty]"
+
 	app.StringOptPtr(&prefix, "p prefix", "AUTO", "prefix for new tags")
+	app.BoolOptPtr(&allowDirty, "allow-dirty", false, "allow tagging of repos that contain uncommited chanves")
 
 	app.Action = func() {
 
@@ -70,8 +74,7 @@ func main() {
 
 		if stats.Dirty {
 			fmt.Println("! modified since last commit (use 'git status' for mode detail)")
-		}
-		if stats.Dirty {
+			fmt.Println()
 			fmt.Println("commit your changes before updating the tag")
 			os.Exit(1)
 		}

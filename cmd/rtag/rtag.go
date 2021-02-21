@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strconv"
@@ -15,9 +15,13 @@ import (
 	"github.com/tcnksm/go-input"
 )
 
+var vtRestore = func() {}
+
 func check(err error) {
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintf(os.Stderr, err.Error())
+		vtRestore()
+		os.Exit(1)
 	}
 }
 
@@ -26,9 +30,12 @@ var ui = &input.UI{
 	Reader: os.Stdin,
 }
 
+var errUserCancelled = errors.New("exiting")
+
 func main() {
 	prefix := "AUTO"
 	allowDirty := false
+	pretty, vtRestore = enableVT(os.Stdout)
 
 	app := cli.App("rtag", "rtag is a git tag management utility that helps making consistent release tags")
 
@@ -69,13 +76,15 @@ func main() {
 			check(err)
 			return
 		} else if err != nil {
-			log.Fatalf("failed to obtain git stats: %v", err)
+			check(fmt.Errorf("failed to obtain git stats: %v", err))
+			return
 		}
 
 		if stats.Dirty {
 			fmt.Println("! modified since last commit (use 'git status' for mode detail)")
 			fmt.Println()
 			fmt.Println("commit your changes before updating the tag")
+			vtRestore()
 			os.Exit(1)
 		}
 
@@ -89,8 +98,7 @@ func main() {
 				fmt.Printf("however, there is an older tag '%s' that can be used instead\n", altOldTag)
 				fmt.Println()
 				if !askYN("proceed with '" + altOldTag + "' as base " + ppInp("/", "y", "n") + "? ") {
-					fmt.Println("exiting")
-					os.Exit(2)
+					check(errUserCancelled)
 				}
 				oldtag = altOldTag
 			} else {
@@ -99,6 +107,7 @@ func main() {
 				fmt.Println("this utility expects your repository to be tagged with semantic tags")
 				fmt.Println("see https://semver.org for more information")
 				fmt.Println("exiting now")
+				vtRestore()
 				os.Exit(1)
 			}
 		}
@@ -137,8 +146,8 @@ func main() {
 			fmt.Printf("your repo state is already tagged as %s\n", ppTag(oldtag))
 			fmt.Print("still want to ")
 			if !askYN("proceed " + ppInp("/", "y", "n") + "? ") {
-				fmt.Println("exiting")
-				os.Exit(2)
+				check(errUserCancelled)
+				return
 			}
 		}
 
@@ -204,9 +213,7 @@ func main() {
 			fmt.Println()
 			fmt.Printf("ready to update tag %s->%s %s:\n", ppTag(oldtag), ppTag(tag), ppDim("(with comment '"+comment+"')"))
 			err := performTagging(tag, comment)
-			if err != nil {
-				log.Fatal(err)
-			}
+			check(err)
 
 			fmt.Printf("mission accomplished")
 		}
@@ -247,8 +254,7 @@ func askYN(prompt string) bool {
 func performTagging(tag string, comment string) error {
 
 	if !askYN("proceed " + ppInp("/", "y", "n") + "? ") {
-		fmt.Println("exiting without changes")
-		os.Exit(2)
+		return errUserCancelled
 	}
 
 	fmt.Println()
@@ -259,7 +265,7 @@ func performTagging(tag string, comment string) error {
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
-		os.Exit(1)
+		return fmt.Errorf("failed to execute %s: %w", cmd.String(), err)
 	}
 
 	fmt.Println()
@@ -273,8 +279,7 @@ func performTagging(tag string, comment string) error {
 	fmt.Println()
 	fmt.Println("this utility can push the new tag for you")
 	if !askYN("proceed with push " + ppInp("/", "y", "n") + "? ") {
-		fmt.Println("exiting")
-		os.Exit(2)
+		return errUserCancelled
 	}
 
 	fmt.Printf("executing: 'git push origin %s'\n", tag)
@@ -283,6 +288,9 @@ func performTagging(tag string, comment string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to execute %s: %w", cmd.String(), err)
+	}
 	return err
 }
 
@@ -347,7 +355,7 @@ func collectActions(v version.Semantic) []action {
 	return ret
 }
 
-var pretty = true
+var pretty = false
 
 const (
 	vtReset     = "\x1b[0m"
@@ -360,9 +368,8 @@ const (
 func ppTag(s string) string {
 	if pretty {
 		return fmt.Sprintf(vtUnderline+"%s"+vtReset, s)
-	} else {
-		return fmt.Sprintf("'%s'", s)
 	}
+	return fmt.Sprintf("'%s'", s)
 }
 
 func ppDim(s string) string {
@@ -373,8 +380,5 @@ func ppDim(s string) string {
 }
 
 func ppInp(sep string, opts ...string) string {
-	//if pretty {
-	//	return vtDim + "[" + vtReset + vtBold + strings.Join(opts, vtReset+vtDim+sep+vtReset+vtBold) + vtReset + vtDim + "]" + vtReset
-	//}
 	return "[" + strings.Join(opts, sep) + "]"
 }

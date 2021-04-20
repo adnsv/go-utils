@@ -40,7 +40,8 @@ func Stat(dir string) (*Stats, error) {
 
 	ret.Branch, err = runner.WDTrimmedOutput(dir, "git", "branch", "--show-current")
 	if err != nil {
-		return nil, fmt.Errorf("while running 'git branch --show-current': %w", err)
+		ret.Branch = ""
+		//return nil, fmt.Errorf("while running 'git branch --show-current': %w", err)
 	}
 	ret.Hash, err = runner.WDTrimmedOutput(dir, "git", "rev-parse", "HEAD")
 	if err != nil {

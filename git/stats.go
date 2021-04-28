@@ -82,7 +82,7 @@ type Description struct {
 
 // ParseDescription parses the result of `git describe --long`
 func ParseDescription(s string) (*Description, error) {
-	re := regexp.MustCompile(`^(.*)-(\d+)-g([0-9,a-f]{7})$`)
+	re := regexp.MustCompile(`^(.*)-(\d+)-g([0-9,a-f]+)$`)
 	parts := re.FindStringSubmatch(s)
 	if len(parts) != 4 {
 		return nil, errors.New("failed to parse `git describe` result")

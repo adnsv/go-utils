@@ -1,6 +1,10 @@
 # go-utils
 
+[![GoDoc](https://godoc.org/github.com/adnsv/go-utils?status.svg)](https://godoc.org/github.com/adnsv/go-utils)
+
 A collection of GO libraries
+
+**Warning**: unstable API, WIP
 
 **NOTICE**: The rtag utility from this repo is relocated to http://github.com/adnsv/rtag
 
@@ -21,3 +25,8 @@ prompt | utilities for building interactive cli applications
 sourcecode | tracking `row:column` locations within source code 
 unpack | unarchiving
 version | version number utilities
+
+## Documentation
+
+Automatically generated documentation for the included packages can be viewed online here:
+http://pkg.go.dev/github.com/adnsv/go-utils

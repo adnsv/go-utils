@@ -1,6 +1,10 @@
 package filesystem
 
-import "os"
+import (
+	"bytes"
+	"errors"
+	"os"
+)
 
 type OverwriteStatus = int
 
@@ -15,12 +19,20 @@ const (
 type WriteFileEntry struct {
 	Descr    string
 	FilePath string
-	Buffer   []byte
+	Payload  *bytes.Buffer
 	Perm     os.FileMode
 	Backup   BackupNameGenerator
 
 	status OverwriteStatus
 	err    error
+}
+
+func NewWriteFileEntry(descr string, fn string, payload *bytes.Buffer) *WriteFileEntry {
+	return &WriteFileEntry{
+		Descr:    descr,
+		FilePath: fn,
+		Payload:  payload,
+	}
 }
 
 func (en *WriteFileEntry) Status() OverwriteStatus {
@@ -35,6 +47,11 @@ func (en *WriteFileEntry) UpdateStatus() {
 	en.status = UnknownStatus
 	en.err = nil
 
+	if en.Payload == nil {
+		en.err = errors.New("missing file buffer")
+		return
+	}
+
 	exists, err := CheckFileExists(en.FilePath)
 	if err != nil {
 		en.status = UnknownStatus
@@ -46,7 +63,7 @@ func (en *WriteFileEntry) UpdateStatus() {
 		return
 	}
 
-	match, err := FileContentMatch(en.FilePath, en.Buffer)
+	match, err := FileContentMatch(en.FilePath, en.Payload.Bytes())
 	if err != nil {
 		en.status = UnknownStatus
 		en.err = err
@@ -64,20 +81,20 @@ func (en *WriteFileEntry) UpdateStatus() {
 type WriteFileSet []*WriteFileEntry
 
 // Add adds new entry into the set.
-func (v *WriteFileSet) Add(descr string, fn string, buf []byte) {
+func (v *WriteFileSet) Add(descr string, fn string, payload *bytes.Buffer) {
 	*v = append(*v, &WriteFileEntry{
 		Descr:    descr,
 		FilePath: fn,
-		Buffer:   buf,
+		Payload:  payload,
 	})
 }
 
 // AddWithBackup adds new entry into the set.
-func (v *WriteFileSet) AddWithBackup(descr string, fn string, backup BackupNameGenerator, buf []byte) {
+func (v *WriteFileSet) AddWithBackup(descr string, fn string, backup BackupNameGenerator, payload *bytes.Buffer) {
 	*v = append(*v, &WriteFileEntry{
 		Descr:    descr,
 		FilePath: fn,
-		Buffer:   buf,
+		Payload:  payload,
 		Backup:   backup,
 	})
 }
@@ -114,7 +131,7 @@ func (v WriteFileSet) WriteOut(feedback WriteFeedbackProc) error {
 			Backup:     en.Backup,
 			OnFeedback: feedback,
 		}
-		en.err = WriteFile(en.FilePath, en.Buffer, &opts)
+		en.err = WriteFile(en.FilePath, en.Payload.Bytes(), &opts)
 	}
 	return nil
 }

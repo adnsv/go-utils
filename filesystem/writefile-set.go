@@ -54,6 +54,7 @@ func (en *WriteFileEntry) UpdateStatus() {
 
 	if en.FilePath == "" {
 		en.err = errEmptyFilePath
+		return
 	}
 	if en.Payload == nil {
 		en.err = errMissingFileBuffer

@@ -43,12 +43,18 @@ func (en *WriteFileEntry) LastError() error {
 	return en.err
 }
 
+var errMissingFileBuffer = errors.New("missing file buffer")
+var errEmptyFilePath = errors.New("empty filepath")
+
 func (en *WriteFileEntry) UpdateStatus() {
 	en.status = UnknownStatus
 	en.err = nil
 
+	if en.FilePath == "" {
+		en.err = errEmptyFilePath
+	}
 	if en.Payload == nil {
-		en.err = errors.New("missing file buffer")
+		en.err = errMissingFileBuffer
 		return
 	}
 

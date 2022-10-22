@@ -6,15 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-)
 
-type OverwriteStatus = int
-
-const (
-	StatusErr = OverwriteStatus(iota)
-	Creating
-	Unchanged
-	Overwriting
+	"golang.org/x/exp/slices"
 )
 
 // WriteFileEntry is an entry in WriteFileSet.
@@ -24,8 +17,9 @@ type WriteFileEntry struct {
 	Payload  *bytes.Buffer
 	Perm     os.FileMode
 	Backup   BackupNameGenerator
+	Tag      string
 
-	status OverwriteStatus
+	status WriteFileStatus
 	err    error
 }
 
@@ -37,7 +31,7 @@ func NewWriteFileEntry(descr string, fn string, payload *bytes.Buffer) *WriteFil
 	}
 }
 
-func (en *WriteFileEntry) Status() OverwriteStatus {
+func (en *WriteFileEntry) Status() WriteFileStatus {
 	return en.status
 }
 
@@ -49,7 +43,7 @@ var errMissingFileBuffer = errors.New("missing file buffer")
 var errEmptyFilePath = errors.New("empty filepath")
 
 func (en *WriteFileEntry) UpdateStatus() {
-	en.status = StatusErr
+	en.status = StatErr
 	en.err = nil
 
 	if en.FilePath == "" {
@@ -63,7 +57,7 @@ func (en *WriteFileEntry) UpdateStatus() {
 
 	exists, err := CheckFileExists(en.FilePath)
 	if err != nil {
-		en.status = StatusErr
+		en.status = StatErr
 		en.err = err
 		return
 	}
@@ -74,7 +68,7 @@ func (en *WriteFileEntry) UpdateStatus() {
 
 	match, err := FileContentMatch(en.FilePath, en.Payload.Bytes())
 	if err != nil {
-		en.status = StatusErr
+		en.status = StatErr
 		en.err = err
 		return
 	}
@@ -88,26 +82,19 @@ func (en *WriteFileEntry) UpdateStatus() {
 
 // WriteFileset bundles multiple pending file write operations together.
 type WriteFileset struct {
-	Entries []*WriteFileEntry
+	Entries    []*WriteFileEntry
+	OnFeedback WriteFeedbackProc
 }
 
 // Add adds new entry into the set.
-func (v *WriteFileset) Add(descr string, fn string, payload *bytes.Buffer) {
-	v.Entries = append(v.Entries, &WriteFileEntry{
+func (v *WriteFileset) Add(descr string, fn string, payload *bytes.Buffer) *WriteFileEntry {
+	en := &WriteFileEntry{
 		Descr:    descr,
 		FilePath: fn,
 		Payload:  payload,
-	})
-}
-
-// AddWithBackup adds new entry into the set.
-func (v *WriteFileset) AddWithBackup(descr string, fn string, backup BackupNameGenerator, payload *bytes.Buffer) {
-	v.Entries = append(v.Entries, &WriteFileEntry{
-		Descr:    descr,
-		FilePath: fn,
-		Payload:  payload,
-		Backup:   backup,
-	})
+	}
+	v.Entries = append(v.Entries, en)
+	return en
 }
 
 type FileEntriesWithErrors []*WriteFileEntry
@@ -136,7 +123,7 @@ func (e FileEntriesWithErrors) Error() string {
 func (v WriteFileset) Errors() error {
 	var r FileEntriesWithErrors
 	for _, en := range v.Entries {
-		if en.err != nil || en.status == StatusErr {
+		if en.err != nil || en.status == StatErr {
 			r = append(r, en)
 		}
 	}
@@ -156,7 +143,7 @@ func (v WriteFileset) UpdateStatus() error {
 }
 
 // Count counts the entries with have the specified status value.
-func (v WriteFileset) Count(status OverwriteStatus) int {
+func (v WriteFileset) Count(status WriteFileStatus) int {
 	n := 0
 	for _, en := range v.Entries {
 		if en.status == status {
@@ -166,7 +153,8 @@ func (v WriteFileset) Count(status OverwriteStatus) int {
 	return n
 }
 
-func (v WriteFileset) CountActionable() int {
+// CountPending counts the entries that are still pending for write operation.
+func (v WriteFileset) CountPending() int {
 	n := 0
 	for _, en := range v.Entries {
 		if en.status == Creating || en.status == Overwriting {
@@ -176,7 +164,26 @@ func (v WriteFileset) CountActionable() int {
 	return n
 }
 
-func (v WriteFileset) WriteOut(feedback WriteFeedbackProc) error {
+// WriteTagged writes out pending entries that have matching tags.
+func (v WriteFileset) WriteTagged(tags ...string) error {
+	if err := v.Errors(); err != nil {
+		return err
+	}
+	for _, en := range v.Entries {
+		if (en.status == Creating || en.status == Overwriting) && slices.Contains(tags, en.Tag) {
+			opts := WriteOptions{
+				Perm:       en.Perm,
+				Backup:     en.Backup,
+				OnFeedback: v.OnFeedback,
+			}
+			en.status, en.err = WriteFileEx(en.FilePath, en.Payload.Bytes(), &opts)
+		}
+	}
+	return v.Errors()
+}
+
+// WriteTagged writes out all pending entries.
+func (v WriteFileset) WriteOut() error {
 	if err := v.Errors(); err != nil {
 		return err
 	}
@@ -185,9 +192,9 @@ func (v WriteFileset) WriteOut(feedback WriteFeedbackProc) error {
 			opts := WriteOptions{
 				Perm:       en.Perm,
 				Backup:     en.Backup,
-				OnFeedback: feedback,
+				OnFeedback: v.OnFeedback,
 			}
-			en.err = WriteFile(en.FilePath, en.Payload.Bytes(), &opts)
+			en.status, en.err = WriteFileEx(en.FilePath, en.Payload.Bytes(), &opts)
 		}
 	}
 	return v.Errors()

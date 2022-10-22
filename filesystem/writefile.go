@@ -17,9 +17,35 @@ type WriteOptions struct {
 // WriteFile writes data to the named file with configurable behavior and
 // feedback.
 func WriteFile(fn string, buf []byte, opts *WriteOptions) error {
+	_, err := WriteFileEx(fn, buf, opts)
+	return err
+}
 
+type WriteFileStatus = int
+
+const (
+	StatErr = WriteFileStatus(iota)
+
+	Unchanged
+	Creating
+	Overwriting
+
+	Failed
+	Skipped
+	Succeeded
+)
+
+// WriteFileEx writes data to the named file with configurable behavior and
+// feedback, provides detailed status.
+func WriteFileEx(fn string, buf []byte, opts *WriteOptions) (status WriteFileStatus, err error) {
 	if opts == nil {
-		return os.WriteFile(fn, buf, 0666)
+		err = os.WriteFile(fn, buf, 0666)
+		if err == nil {
+			status = Succeeded
+		} else {
+			status = Failed
+		}
+		return
 	}
 
 	// effective permissions
@@ -28,78 +54,95 @@ func WriteFile(fn string, buf []byte, opts *WriteOptions) error {
 		perm = 0666
 	}
 
-	perform_write := func() error {
+	perform_write := func() {
 		if opts.OnFeedback != nil {
 			opts.OnFeedback(FeedbackWriteBegin, fn)
 		}
-		err := os.WriteFile(fn, buf, perm)
-		if opts.OnFeedback != nil {
-			if err == nil {
+		err = os.WriteFile(fn, buf, perm)
+		if err == nil {
+			status = Succeeded
+			if opts.OnFeedback != nil {
 				opts.OnFeedback(FeedbackWriteSucceded, fn)
-			} else {
+			}
+		} else {
+			status = Failed
+			if opts.OnFeedback != nil {
 				opts.OnFeedback(FeedbackWriteFailed, fn)
 			}
 		}
-		return err
 	}
 
 	if !opts.OverwriteMatchingContent {
-		match, err := FileContentMatch(fn, buf)
+		var match bool
+		match, err = FileContentMatch(fn, buf)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				return perform_write()
+				// creating new
+				perform_write()
+				return
 			} else {
-				return err
+				// errored while matching content
+				status = Failed
+				if opts.OnFeedback != nil {
+					opts.OnFeedback(FeedbackWriteBegin, fn)
+					opts.OnFeedback(FeedbackWriteFailed, fn)
+				}
+				return status, err
 			}
 		}
 		if match {
+			status = Skipped
 			if opts.OnFeedback != nil {
 				opts.OnFeedback(FeedbackWriteSkipped, fn)
 			}
-			return nil
+			return status, nil
 		}
 	}
 
 	if opts.Backup == nil {
-		return perform_write()
+		perform_write()
+		return
 	}
 
 	backup_attempt := 1
 	backup_fn := opts.Backup(fn, backup_attempt)
 	if backup_fn == "" {
-		return errFileBackupFailed
+		status = Failed
+		err = errFileBackupFailed
+		return
 	}
 
 	for FileExists(backup_fn) {
 		backup_attempt++
 		backup_fn = opts.Backup(fn, backup_attempt)
 		if backup_fn == "" {
-			return errFileBackupFailed
+			status = Failed
+			err = errFileBackupFailed
+			return
 		}
 	}
 
 	if opts.OnFeedback != nil {
 		opts.OnFeedback(FeedbackBackupBegin, backup_fn)
 	}
-	if err := os.Rename(fn, backup_fn); err != nil {
+	if err = os.Rename(fn, backup_fn); err != nil {
+		status = Failed
 		if opts.OnFeedback != nil {
 			opts.OnFeedback(FeedbackBackupFailed, backup_fn)
 		}
-		return err
+		return
 	}
 	if opts.OnFeedback != nil {
 		opts.OnFeedback(FeedbackBackupSucceded, backup_fn)
 	}
 
-	err := perform_write()
+	perform_write()
 	if err != nil {
 		// try to restore backup
 		restore_err := os.Rename(backup_fn, fn)
 		if restore_err != nil && opts.OnFeedback != nil {
 			opts.OnFeedback(FeedbackBackupRestoreFailed, backup_fn)
 		}
-		return err
 	}
-
-	return nil
+	return
 }

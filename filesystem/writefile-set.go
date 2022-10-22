@@ -3,15 +3,17 @@ package filesystem
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type OverwriteStatus = int
 
 const (
-	UnknownStatus = OverwriteStatus(iota)
-	WritingNew
-	UnchangedContent
+	StatusErr = OverwriteStatus(iota)
+	Creating
+	Unchanged
 	Overwriting
 )
 
@@ -43,46 +45,50 @@ func (en *WriteFileEntry) LastError() error {
 	return en.err
 }
 
+var errMissingPayload = errors.New("missing file payload")
+
 func (en *WriteFileEntry) UpdateStatus() {
-	en.status = UnknownStatus
+	en.status = StatusErr
 	en.err = nil
 
 	if en.Payload == nil {
-		en.err = errors.New("missing file buffer")
+		en.err = errMissingPayload
 		return
 	}
 
 	exists, err := CheckFileExists(en.FilePath)
 	if err != nil {
-		en.status = UnknownStatus
+		en.status = StatusErr
 		en.err = err
 		return
 	}
 	if !exists {
-		en.status = WritingNew
+		en.status = Creating
 		return
 	}
 
 	match, err := FileContentMatch(en.FilePath, en.Payload.Bytes())
 	if err != nil {
-		en.status = UnknownStatus
+		en.status = StatusErr
 		en.err = err
 		return
 	}
 
 	if match {
-		en.status = UnchangedContent
+		en.status = Unchanged
 	} else {
 		en.status = Overwriting
 	}
 }
 
-// WriteFileSet bundles multiple pending file write operations together.
-type WriteFileSet []*WriteFileEntry
+// WriteFileset bundles multiple pending file write operations together.
+type WriteFileset struct {
+	Entries []*WriteFileEntry
+}
 
 // Add adds new entry into the set.
-func (v *WriteFileSet) Add(descr string, fn string, payload *bytes.Buffer) {
-	*v = append(*v, &WriteFileEntry{
+func (v *WriteFileset) Add(descr string, fn string, payload *bytes.Buffer) {
+	v.Entries = append(v.Entries, &WriteFileEntry{
 		Descr:    descr,
 		FilePath: fn,
 		Payload:  payload,
@@ -90,8 +96,8 @@ func (v *WriteFileSet) Add(descr string, fn string, payload *bytes.Buffer) {
 }
 
 // AddWithBackup adds new entry into the set.
-func (v *WriteFileSet) AddWithBackup(descr string, fn string, backup BackupNameGenerator, payload *bytes.Buffer) {
-	*v = append(*v, &WriteFileEntry{
+func (v *WriteFileset) AddWithBackup(descr string, fn string, backup BackupNameGenerator, payload *bytes.Buffer) {
+	v.Entries = append(v.Entries, &WriteFileEntry{
 		Descr:    descr,
 		FilePath: fn,
 		Payload:  payload,
@@ -99,39 +105,81 @@ func (v *WriteFileSet) AddWithBackup(descr string, fn string, backup BackupNameG
 	})
 }
 
+type FileEntriesWithErrors []*WriteFileEntry
+
+var errUnknownFilesetStatus = errors.New("unknown fileset status")
+
+func (e FileEntriesWithErrors) Error() string {
+	if len(e) == 0 {
+		return ""
+	}
+	en := e[0]
+	if en.err == nil {
+		return errUnknownFilesetStatus.Error()
+	}
+	s := en.Descr
+	if s == "" {
+		s = "file: " + filepath.Base(en.FilePath)
+	}
+	if len(e) > 1 {
+		return fmt.Sprintf("error in %s (+%d more): %s", s, len(e)-1, en.err)
+	} else {
+		return fmt.Sprintf("error in %s: %s", s, en.err)
+	}
+}
+
+func (v WriteFileset) Errors() FileEntriesWithErrors {
+	r := FileEntriesWithErrors{}
+	for _, en := range v.Entries {
+		if en.err != nil || n.status == StatusErr {
+			r = append(r, en)
+		}
+	}
+	return r
+}
+
 // UpdateStatus updates pending overwrite status for all entries in the set.
-func (v WriteFileSet) UpdateStatus() {
-	for _, en := range v {
+func (v WriteFileset) UpdateStatus() error {
+	for _, en := range v.Entries {
 		en.UpdateStatus()
 	}
+	return v.Errors()
 }
 
-func (v WriteFileSet) NeedsOverwriteConfirmation() bool {
-	for _, en := range v {
-		if en.status == Overwriting {
-			return true
+// Count counts the entries with have the specified status value.
+func (v WriteFileset) Count(status OverwriteStatus) int {
+	n := 0
+	for _, en := range v.Entries {
+		if en.status == status {
+			n++
 		}
 	}
-	return false
+	return n
 }
 
-func (v WriteFileSet) HasAnythingToDo() bool {
-	for _, en := range v {
-		if en.status == WritingNew || en.status == Overwriting {
-			return true
+func (v WriteFileset) CountActionable() int {
+	n := 0
+	for _, en := range v.Entries {
+		if en.status == Creating || en.status == Overwriting {
+			n++
 		}
 	}
-	return false
+	return n
 }
 
-func (v WriteFileSet) WriteOut(feedback WriteFeedbackProc) error {
-	for _, en := range v {
-		opts := WriteOptions{
-			Perm:       en.Perm,
-			Backup:     en.Backup,
-			OnFeedback: feedback,
-		}
-		en.err = WriteFile(en.FilePath, en.Payload.Bytes(), &opts)
+func (v WriteFileset) WriteOut(feedback WriteFeedbackProc) error {
+	if err := v.Errors(); err != nil {
+		return err
 	}
-	return nil
+	for _, en := range v.Entries {
+		if en.status == Creating || en.status == Overwriting {
+			opts := WriteOptions{
+				Perm:       en.Perm,
+				Backup:     en.Backup,
+				OnFeedback: feedback,
+			}
+			en.err = WriteFile(en.FilePath, en.Payload.Bytes(), &opts)
+		}
+	}
+	return v.Errors()
 }

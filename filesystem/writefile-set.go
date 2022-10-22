@@ -128,14 +128,18 @@ func (e FileEntriesWithErrors) Error() string {
 	}
 }
 
-func (v WriteFileset) Errors() FileEntriesWithErrors {
+func (v WriteFileset) Errors() error {
 	var r FileEntriesWithErrors
 	for _, en := range v.Entries {
 		if en.err != nil || en.status == StatusErr {
 			r = append(r, en)
 		}
 	}
-	return r
+	if len(r) > 0 {
+		return r
+	} else {
+		return nil
+	}
 }
 
 // UpdateStatus updates pending overwrite status for all entries in the set.

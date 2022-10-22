@@ -182,7 +182,7 @@ func (v WriteFileset) WriteTagged(tags ...string) error {
 	return v.Errors()
 }
 
-// WriteTagged writes out all pending entries.
+// WritePending writes out all pending entries.
 func (v WriteFileset) WritePending() error {
 	if err := v.Errors(); err != nil {
 		return err

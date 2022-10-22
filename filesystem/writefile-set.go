@@ -129,7 +129,7 @@ func (e FileEntriesWithErrors) Error() string {
 }
 
 func (v WriteFileset) Errors() FileEntriesWithErrors {
-	r := FileEntriesWithErrors{}
+	var r FileEntriesWithErrors
 	for _, en := range v.Entries {
 		if en.err != nil || en.status == StatusErr {
 			r = append(r, en)

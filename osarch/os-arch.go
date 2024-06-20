@@ -106,6 +106,10 @@ func (oa *Pair) MarshalText() (bb []byte, err error) {
 	return
 }
 
+// ErrInvalid is returned when a string representation of
+// Pair is invalid
+var ErrInvalid = errors.New("invalid os-arch")
+
 // Parse parses a string into Pair
 func Parse(s string) (Pair, error) {
 	i := strings.IndexAny(s, "-._")
@@ -115,7 +119,7 @@ func Parse(s string) (Pair, error) {
 	return Pair{OS: s[:i], Arch: s[i+1:]}, nil
 }
 
-// MustParse is like Parse, but panics if the string cannot be parsed
+// MustParse is like Parse, but panics isth string cannot be parsed
 func MustParse(s string) Pair {
 	ret, err := Parse(s)
 	if err != nil {
@@ -127,12 +131,11 @@ func MustParse(s string) Pair {
 // UnmarshalJSON is used when reading Pair from JSON streams
 func (oa *Pair) UnmarshalJSON(b []byte) (err error) {
 	var s string
-	err = json.Unmarshal(b, &s)
-	if err != nil {
-		return err
+	if json.Unmarshal(b, &s); err == nil {
+		*oa, err = Parse(s)
+		return
 	}
-	*oa, err = Parse(s)
-	return
+	return ErrInvalid
 }
 
 // UnmarshalText implements TextUnmarshaler interface for Pair

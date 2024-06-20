@@ -55,14 +55,20 @@ func ParseList(ss ...string) ([]Pair, error) {
 		}
 	}
 
-	slices.SortFunc(targets, func(a, b Pair) bool {
+	slices.SortFunc(targets, func(a, b Pair) int {
 		if a.OS < b.OS {
-			return true
+			return -1
 		}
 		if a.OS > b.OS {
-			return false
+			return +1
 		}
-		return a.Arch < b.Arch
+		if a.Arch < b.Arch {
+			return -1
+		}
+		if a.Arch > b.Arch {
+			return +1
+		}
+		return 0
 	})
 
 	return targets, nil

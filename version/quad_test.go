@@ -21,7 +21,7 @@ func TestMakeVersionQuad(t *testing.T) {
 		{"release", args{"1.0.0", 0}, "1.0.0.50000", nil},
 		{"release", args{"1.0.0", 1}, "1.0.0.50001", nil},
 		{"release", args{"1.0.0", 99}, "1.0.0.50099", nil},
-		{"release", args{"1.0.0", 100}, "", ErrNumberOfAdditionalCommitsIsTooLarge},
+		{"release", args{"1.0.0", 100}, "1.0.0.50099", nil},
 		{"release-1", args{"1.0.0-1", 0}, "1.0.0.50100", nil},
 		{"release-1.ignored", args{"1.0.0-1.ignored", 0}, "1.0.0.50100", nil},
 		{"release-99", args{"1.0.0-99", 0}, "1.0.0.59900", nil},

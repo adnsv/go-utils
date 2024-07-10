@@ -9,7 +9,6 @@ import (
 
 // Quad can be used to form version quads from semantic versions.
 // These are required for embedding numeric versions into Windows resources.
-//
 type Quad goversioninfo.FileVersion
 
 const (
@@ -27,10 +26,6 @@ var ErrVersionNumberIsTooLarge = errors.New("version number is too large")
 // ErrReleaseNumberIsTooLarge is produced by MakeVersionQuad when numeric suffix
 // is out of range.
 var ErrReleaseNumberIsTooLarge = errors.New("release number is too large")
-
-// ErrNumberOfAdditionalCommitsIsTooLarge is produced by MakeVersionQuad when
-// the number of additional commits is out of range.
-var ErrNumberOfAdditionalCommitsIsTooLarge = errors.New("number of additional commits is too large")
 
 // ErrUnsupportedPR is produced by MakeVersionQuad for unsupported pre-release
 // suffixes.
@@ -64,7 +59,6 @@ var ErrUnsupportedPR = errors.New("unsupported pre-release content")
 //   - v1.0.0-5 -> 1.0.0.50005
 //
 // see stats-test.go for more examples
-//
 func MakeQuad(v Semantic, additionalCommits int) (Quad, error) {
 	if v.Major > 65535 || v.Minor > 65535 || v.Patch > 65535 {
 		return Quad{0, 0, 0, 0}, ErrVersionNumberIsTooLarge
@@ -108,8 +102,7 @@ func MakeQuad(v Semantic, additionalCommits int) (Quad, error) {
 	}
 
 	if additionalCommits >= quadPatchPRMultiplier {
-		ret.Build += quadPatchPRMultiplier - 1
-		return ret, ErrNumberOfAdditionalCommitsIsTooLarge
+		additionalCommits = quadPatchPRMultiplier - 1
 	}
 
 	ret.Build += additionalCommits
